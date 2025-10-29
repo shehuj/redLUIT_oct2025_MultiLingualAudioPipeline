@@ -58,7 +58,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip'
       
       - name: Install dependencies
@@ -73,12 +73,12 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
       
       # Alternative: Use AWS access keys (less secure)
-      # - name: Configure AWS credentials for Production
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
-      #     aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
-      #     aws-region: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS credentials for Production
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
       
       - name: Verify production environment
         run: |
@@ -230,13 +230,13 @@ jobs:
         with:
           payload: |
             {
-              "text": "${{ job.status == 'success' && '✅' || '❌' }} Production Audio Processing ${{ job.status }}",
+              "text": "${{ job.status == 'success' && '!!' || '!' }} Production Audio Processing ${{ job.status }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "${{ job.status == 'success' && '✅ Production Processing Complete' || '❌ Production Processing Failed' }}"
+                    "text": "${{ job.status == 'success' && 'Production Processing Complete' || 'Production Processing Failed' }}"
                   }
                 },
                 {

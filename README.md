@@ -455,3 +455,316 @@ MIT License - Feel free to use and modify.
 ---
 
 **Questions?** Check the troubleshooting section or create an issue in the repository.
+
+
+#### TERRAFORM
+
+# Complete Audio Processing Infrastructure Example
+
+This example demonstrates a full production-ready setup with both development and production environments.
+
+## What This Creates
+
+- ✅ **GitHub OIDC Provider** - For secure authentication
+- ✅ **Dev S3 Bucket** - With shorter retention (90 days)
+- ✅ **Prod S3 Bucket** - With longer retention (2 years)
+- ✅ **Dev IAM Role** - For GitHub Actions (all branches)
+- ✅ **Prod IAM Role** - For GitHub Actions (main branch only)
+- ✅ **Lifecycle Rules** - Automatic cost optimization
+- ✅ **CloudWatch Logging** - Audit trails
+- ✅ **SNS Notifications** - (Optional)
+
+## Quick Start
+
+### 1. Configure Variables
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+```
+
+### 2. First Run (Create OIDC Provider)
+
+```hcl
+# In terraform.tfvars
+create_oidc_provider         = true
+check_existing_oidc_provider = false
+```
+
+```bash
+terraform init
+terraform plan
+terraform apply
+```
+
+### 3. Save OIDC Provider ARN
+
+After first apply, note the OIDC provider ARN from outputs.
+
+### 4. Subsequent Runs
+
+```hcl
+# In terraform.tfvars
+create_oidc_provider         = false
+check_existing_oidc_provider = true
+```
+
+```bash
+terraform apply
+```
+
+### 5. Configure GitHub
+
+Use the outputs to configure GitHub secrets:
+
+```bash
+terraform output github_secrets_summary
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│         GitHub OIDC Provider                │
+│   (Once per AWS Account)                    │
+└──────────────┬──────────────────────────────┘
+               │
+        ┌──────┴──────┐
+        │             │
+        ▼             ▼
+┌─────────────┐ ┌─────────────┐
+│ Dev Role    │ │ Prod Role   │
+│ (All        │ │ (Main only) │
+│  branches)  │ │             │
+└──────┬──────┘ └──────┬──────┘
+       │               │
+       ▼               ▼
+┌─────────────┐ ┌─────────────┐
+│ Dev Bucket  │ │ Prod Bucket │
+│ - 30d → IA  │ │ - 90d → IA  │
+│ - 90d del   │ │ - 730d del  │
+└─────────────┘ └─────────────┘
+```
+
+## Configuration Options
+
+### Basic Configuration (Required)
+
+```hcl
+aws_region       = "us-east-1"
+dev_bucket_name  = "acme-audio-dev"
+prod_bucket_name = "acme-audio-prod"
+github_org       = "acme-corp"
+github_repo      = "audio-pipeline"
+```
+
+### Production Restrictions
+
+```hcl
+# Only allow main branch and tags to deploy to production
+restrict_prod_to_main = true
+```
+
+### Cost Optimization
+
+```hcl
+# Enable intelligent tiering for automatic optimization
+enable_intelligent_tiering = true
+```
+
+### Advanced Features
+
+```hcl
+# Enable custom vocabularies for better transcription
+enable_custom_vocabularies = true
+
+# Enable custom terminologies for domain-specific translation
+enable_custom_terminologies = true
+
+# Enable custom lexicons for pronunciation control
+enable_custom_lexicons = true
+```
+
+### Monitoring
+
+```hcl
+# Enable access logging
+enable_access_logging = true
+
+# Enable SNS notifications
+enable_sns_notifications = true
+notification_email = "team@example.com"
+```
+
+## Outputs
+
+The example provides helpful outputs for configuration:
+
+```bash
+# View all outputs
+terraform output
+
+# View GitHub secrets configuration
+terraform output github_secrets_summary
+
+# View setup instructions
+terraform output setup_instructions
+```
+
+## Cost Estimates
+
+### Monthly Infrastructure Costs
+
+**Development:**
+- S3 Storage (100GB): ~$2.30
+- Lifecycle transitions: Reduces to ~$0.40 after 90 days
+- IAM roles/policies: Free
+- **Total: ~$0.40-2.30/month**
+
+**Production:**
+- S3 Storage (500GB): ~$11.50
+- Lifecycle transitions: Reduces to ~$2.00 after 90 days
+- IAM roles/policies: Free
+- **Total: ~$2.00-11.50/month**
+
+### Processing Costs (Per File)
+
+- Transcribe (10 min): $0.24
+- Translate (1000 chars): $0.015
+- Polly (1000 chars): $0.004
+- **Total per 10-min file: ~$0.26**
+
+## Security Features
+
+### Development
+- ✅ All branches can deploy
+- ✅ Shorter data retention
+- ✅ Force destroy enabled for cleanup
+
+### Production
+- ✅ Only main branch + tags can deploy
+- ✅ Longer data retention for compliance
+- ✅ Force destroy disabled for protection
+- ✅ Required reviewers (configured in GitHub)
+
+## Lifecycle Management
+
+### Development Environment
+```
+audio_inputs/
+  30 days  → Standard-IA
+  90 days  → DELETE
+
+transcripts/ & translations/
+  60 days  → DELETE
+
+audio_outputs/
+  90 days  → DELETE
+```
+
+### Production Environment
+```
+audio_inputs/
+  90 days  → Standard-IA
+  180 days → Glacier
+  730 days → DELETE (2 years)
+
+transcripts/ & translations/
+  365 days → DELETE (1 year)
+
+audio_outputs/
+  730 days → DELETE (2 years)
+```
+
+## Common Workflows
+
+### Deploy Infrastructure
+
+```bash
+terraform init
+terraform plan
+terraform apply
+```
+
+### Update Production Retention
+
+```hcl
+# In terraform.tfvars
+# Change retention periods
+```
+
+```bash
+terraform plan
+terraform apply
+```
+
+### Add Custom Vocabularies
+
+```hcl
+# In terraform.tfvars
+enable_custom_vocabularies = true
+```
+
+```bash
+terraform apply
+```
+
+## Troubleshooting
+
+### OIDC Provider Already Exists
+
+```
+Error: EntityAlreadyExists
+```
+
+**Fix:**
+```hcl
+create_oidc_provider = false
+check_existing_oidc_provider = true
+```
+
+### Bucket Name Taken
+
+```
+Error: BucketAlreadyExists
+```
+
+**Fix:** Choose different bucket names (must be globally unique)
+
+### Role Not Assuming
+
+**Check:**
+1. OIDC provider ARN is correct
+2. GitHub repository pattern matches
+3. Branch restrictions are appropriate
+
+## Next Steps
+
+After infrastructure is deployed:
+
+1. ✅ Configure GitHub secrets
+2. ✅ Create GitHub environments
+3. ✅ Copy workflow files
+4. ✅ Test with sample audio
+5. ✅ Monitor costs in AWS Cost Explorer
+
+## Cleanup
+
+To destroy all resources:
+
+```bash
+# Warning: This will delete all buckets and data
+terraform destroy
+```
+
+## Support
+
+For issues or questions:
+- Check module READMEs in `../../modules/`
+- Review outputs: `terraform output`
+- Check AWS CloudTrail logs
+- Review GitHub Actions logs
+
+## License
+
+MIT
