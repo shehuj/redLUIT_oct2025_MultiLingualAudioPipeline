@@ -1,7 +1,7 @@
 variable "bucket_name" { 
     description = "value for the S3 bucket name"
     type = string
-    default = "multilingua_pipeline_bucket"
+    default = "multilingua-pipeline-bucket"
     }
 variable "aws_region"  { 
     type = string 
