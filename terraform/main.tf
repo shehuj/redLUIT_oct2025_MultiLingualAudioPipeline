@@ -38,7 +38,7 @@ data "aws_iam_policy_document" "bucket_policy" {
       type        = "AWS"
       identifiers = ["*"]
     }
-    effect = "Allow"
+    effect = "Deny"
     condition {
       test     = "Bool"
       variable = "aws:SecureTransport"
