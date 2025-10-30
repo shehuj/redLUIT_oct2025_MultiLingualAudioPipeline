@@ -16,7 +16,7 @@ resource "aws_s3_bucket_versioning" "versioning" {
 }
 
 resource "aws_s3_bucket_policy" "policy" {
-  bucket = aws_s3_bucket.audio_bucket.id
+  bucket = aws_s3_bucket.multilingua_bucket.id
   policy = data.aws_iam_policy_document.bucket_policy.json
 }
 
