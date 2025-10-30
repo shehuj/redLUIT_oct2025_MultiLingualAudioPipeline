@@ -2,10 +2,11 @@ name: Deploy Infrastructure
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
     paths:
       - 'terraform/**'
-  workflow_dispatch: {}
+  workflow_dispatch: {
+  }
 
 jobs:
   deploy-beta:
@@ -16,8 +17,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
       S3_BUCKET: ${{ secrets.S3_BUCKET }}
-      ENV_PREFIX: "beta"
-      SOURCE_LANG: "en-US"
+      ENV_PREFIX: dev, 'prod'][github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'dev' || 'beta']
 
     steps:
       - name: Checkout Code
