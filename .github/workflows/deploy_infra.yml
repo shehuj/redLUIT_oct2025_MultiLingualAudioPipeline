@@ -1,0 +1,46 @@
+name: Deploy Infrastructure
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch: {}
+
+jobs:
+  process-beta:
+    runs-on: ubuntu-latest
+
+    env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        ENV_PREFIX: "beta"
+        SOURCE_LANG: "en-US"
+
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+            
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: '1.7.6' 
+          
+      - name: Initialize Terraform
+          run: terraform init
+
+      - name: Apply Terraform configuration
+          run: terraform apply -auto-approve -var="s3_bucket=${{ env.S3_BUCKET }}" -var="env_prefix=${{ env.ENV_PREFIX }}" -var="source_language=${{ env.SOURCE_LANG }}"
+            working-directory: ./terraform
+
+      - name: Verify Deployment
+          run: |
+            echo "Verifying S3 Bucket Versioning"
+            aws s3api get-bucket-versioning --bucket ${{ env.S3_BUCKET }}
+        
