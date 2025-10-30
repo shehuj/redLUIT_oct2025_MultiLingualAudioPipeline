@@ -19,6 +19,27 @@ resource "aws_s3_bucket_policy" "policy" {
   policy = data.aws_iam_policy_document.bucket_policy.json
 }
 
+data "aws_iam_policy_document" "bucket_policy" {
+  statement {
+    actions   = ["s3:*"]
+    resources = [
+      aws_s3_bucket.multilingua_bucket.arn,
+      "${aws_s3_bucket.multilingua_bucket.arn}/*",
+    ]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    effect = "Allow"
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}       
+
+/*
 resource "aws_s3_bucket_policy" "policy" {
   bucket = aws_s3_bucket.multilingua_bucket.id
 
@@ -50,4 +71,4 @@ resource "aws_s3_bucket_policy" "policy" {
   })
 }
 
-
+*/
