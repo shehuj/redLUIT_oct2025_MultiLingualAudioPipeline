@@ -2,7 +2,7 @@ provider "aws" {
   region = var.aws_region
 }
 
-resource "aws_s3_bucket" "audio_bucket" {
+resource "aws_s3_bucket" "multilingua_bucket" {
   bucket        = var.bucket_name
   force_destroy = true
 }
@@ -29,7 +29,7 @@ data "aws_iam_policy_document" "bucket_policy" {
                  "s3:PutObjectTagging",
                  "s3:GetObjectTagging",
                  "s3:PutObject"]
-    resources = ["${aws_s3_bucket.audio_bucket.arn}/*"]
+    resources = ["${aws_s3_bucket.multilingua_bucket.arn}/*"]
 
     principals {
       type        = "AWS"
