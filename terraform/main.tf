@@ -19,21 +19,35 @@ resource "aws_s3_bucket_policy" "policy" {
   policy = data.aws_iam_policy_document.bucket_policy.json
 }
 
-data "aws_iam_policy_document" "bucket_policy" {
-  statement {
-    actions   = ["s3:GetObject", 
-                 "s3:ListBucket",
-                 "s3:DeleteObject",
-                 "s3:PutObjectAcl",
-                 "s3:PutObjectTagging",
-                 "s3:GetObjectTagging",
-                 "s3:PutObject"]
-    resources = ["${aws_s3_bucket.multilingua_bucket.arn}/*"]
+resource "aws_s3_bucket_policy" "policy" {
+  bucket = aws_s3_bucket.multilingua_bucket.id
 
-    principals {
-      type        = "AWS"
-      identifiers = ["*"]
-    }
-  }
-}   
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ListBucketAccess"
+        Effect = "Allow"
+        Principal = {
+          AWS = var.some_role_arn
+        }
+        Action   = "s3:ListBucket"
+        Resource = "arn:aws:s3:::${aws_s3_bucket.multilingua_bucket.id}"
+      },
+      {
+        Sid    = "ObjectReadWrite"
+        Effect = "Allow"
+        Principal = {
+#          AWS = var.some_role_arn
+        }
+        Action   = [
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Resource = "arn:aws:s3:::${aws_s3_bucket.multilingua_bucket.id}/*"
+      }
+    ]
+  })
+}
+
 
