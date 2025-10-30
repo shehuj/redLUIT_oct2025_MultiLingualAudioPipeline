@@ -8,8 +8,7 @@ resource "aws_s3_bucket" "multilingua_bucket" {
 }
 
 resource "aws_s3_bucket_versioning" "versioning" {
-  bucket = aws_s3_bucket.audio_bucket.id
-
+  bucket = aws_s3_bucket.multilingua_bucket.id
   versioning_configuration {
     status = "Enabled"
   }
