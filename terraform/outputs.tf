@@ -7,6 +7,3 @@ output "bucket_arn" {
 output "bucket_region" {
   value = aws_s3_bucket.audio_bucket.region
 }
-output "bucket_creation_date" {
-  value = aws_s3_bucket.audio_bucket.creation_date
-}
