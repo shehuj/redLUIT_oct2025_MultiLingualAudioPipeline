@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-Audio Processing Script for GitHub Workflows
-Processes MP3 files through AWS Transcribe, Translate, and Polly,
-and uploads all outputs to structured S3 prefixes.
+Audio Processing Script for GitHub Workflows:
+- Uploads .mp3 files from audio_inputs/
+- Calls Amazon Transcribe to generate transcript
+- Calls Amazon Translate to translate into target language
+- Calls Amazon Polly to synthesize translated speech
+- Uploads all outputs to S3 under the structure:
+    {env_prefix}/transcripts/{filename}.txt
+    {env_prefix}/translations/{filename}_{lang}.txt
+    {env_prefix}/audio_outputs/{filename}_{lang}.mp3
 """
 
 import os
 import json
 import time
-import boto3
-from pathlib import Path
-from botocore.exceptions import ClientError
 import logging
-import sys
+from pathlib import Path
+import boto3
+from botocore.exceptions import ClientError
 import urllib.request
-
-# Environment variables expected:
-#   S3_BUCKET_NAME   : the S3 bucket where results will be stored
-#   ENV_PREFIX       : e.g., 'beta' or 'prod'
-#   TARGET_LANGUAGE  : language code for translation (e.g., 'es')
-#   SOURCE_LANGUAGE  : language code for transcription (e.g., 'en-US')
-#   INPUT_FOLDER     : folder path where .mp3 files reside (default: 'audio_inputs')
+import sys
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,112 +28,77 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class AudioProcessor:
-    """Handles audio processing pipeline with AWS services."""
-    
     def __init__(self, bucket_name, env_prefix, target_language='es', source_language='en-US'):
         self.bucket_name = bucket_name
-        self.env_prefix = env_prefix.rstrip('/')  # ensure no trailing slash
+        self.env_prefix = env_prefix.rstrip('/')
         self.target_language = target_language
         self.source_language = source_language
-        
-        # Initialize AWS clients
+
         self.s3_client = boto3.client('s3')
         self.transcribe_client = boto3.client('transcribe')
         self.translate_client = boto3.client('translate')
         self.polly_client = boto3.client('polly')
-        
-        logger.info(f"Initialized AudioProcessor with bucket: {bucket_name}")
-        logger.info(f"Environment prefix: {self.env_prefix}")
+
+        logger.info(f"Initialized AudioProcessor → bucket: {bucket_name}, env: {self.env_prefix}")
         logger.info(f"Source language: {source_language}, Target language: {target_language}")
-    
+
     def upload_to_s3(self, file_path, s3_key):
         try:
             self.s3_client.upload_file(file_path, self.bucket_name, s3_key)
             s3_uri = f"s3://{self.bucket_name}/{s3_key}"
-            logger.info(f"Uploaded {file_path} to {s3_uri}")
+            logger.info(f"Uploaded {file_path} → {s3_uri}")
             return s3_uri
         except ClientError as e:
-            logger.error(f"Failed to upload {file_path} to S3: {e}")
+            logger.error(f"Upload to S3 failed: {e}")
             raise
-    
+
     def transcribe_audio(self, s3_uri, job_name):
         try:
-            logger.info(f"Starting transcription job: {job_name}")
+            logger.info(f"Start Transcribe job: {job_name}")
             self.transcribe_client.start_transcription_job(
                 TranscriptionJobName=job_name,
                 Media={'MediaFileUri': s3_uri},
                 MediaFormat='mp3',
                 LanguageCode=self.source_language
             )
-            
-            # Wait for job to complete
-            max_tries = 60
-            while max_tries > 0:
-                max_tries -= 1
-                job = self.transcribe_client.get_transcription_job(TranscriptionJobName=job_name)
-                status = job['TranscriptionJob']['TranscriptionJobStatus']
+
+            # poll for status
+            while True:
+                resp = self.transcribe_client.get_transcription_job(TranscriptionJobName=job_name)
+                status = resp['TranscriptionJob']['TranscriptionJobStatus']
+                logger.info(f"Transcription status: {status}")
                 if status == 'COMPLETED':
-                    logger.info(f"Transcription job {job_name} completed")
-                    transcript_uri = job['TranscriptionJob']['Transcript']['TranscriptFileUri']
+                    transcript_uri = resp['TranscriptionJob']['Transcript']['TranscriptFileUri']
+                    logger.info(f"Transcript available at {transcript_uri}")
                     with urllib.request.urlopen(transcript_uri) as response:
-                        transcript_data = json.loads(response.read())
-                        transcript_text = transcript_data['results']['transcripts'][0]['transcript']
+                        data = json.loads(response.read())
+                        transcript_text = data['results']['transcripts'][0]['transcript']
                     return transcript_text
-                elif status == 'FAILED':
-                    failure_reason = job['TranscriptionJob'].get('FailureReason', 'Unknown')
-                    logger.error(f"Transcription job failed: {failure_reason}")
-                    raise Exception(f"Transcription failed: {failure_reason}")
-                logger.info(f"Transcription job status: {status}, waiting...")
+                if status == 'FAILED':
+                    reason = resp['TranscriptionJob'].get('FailureReason', 'Unknown')
+                    logger.error(f"Transcription failed: {reason}")
+                    raise Exception(f"Transcription failed: {reason}")
                 time.sleep(10)
-            
-            raise Exception("Transcription job timed out")
         except ClientError as e:
-            logger.error(f"Transcription error: {e}")
+            logger.error(f"Transcribe API error: {e}")
             raise
-        # Note: Avoid cleanup here unless necessary.
-    
-    def translate_text(self, text, source_lang=None):
+
+    def translate_text(self, text):
         try:
-            source_lang_code = source_lang or self.source_language.split('-')[0]
-            logger.info(f"Translating text from {source_lang_code} to {self.target_language}")
-            max_length = 10000
-            if len(text) <= max_length:
-                result = self.translate_client.translate_text(
-                    Text=text,
-                    SourceLanguageCode=source_lang_code,
-                    TargetLanguageCode=self.target_language
-                )
-                return result['TranslatedText']
-            else:
-                translated_chunks = []
-                sentences = text.replace('. ', '.|').replace('? ', '?|').replace('! ', '!|').split('|')
-                current_chunk = ""
-                for sentence in sentences:
-                    if len(current_chunk) + len(sentence) < max_length:
-                        current_chunk += sentence
-                    else:
-                        result = self.translate_client.translate_text(
-                            Text=current_chunk,
-                            SourceLanguageCode=source_lang_code,
-                            TargetLanguageCode=self.target_language
-                        )
-                        translated_chunks.append(result['TranslatedText'])
-                        current_chunk = sentence
-                if current_chunk:
-                    result = self.translate_client.translate_text(
-                        Text=current_chunk,
-                        SourceLanguageCode=source_lang_code,
-                        TargetLanguageCode=self.target_language
-                    )
-                    translated_chunks.append(result['TranslatedText'])
-                return ' '.join(translated_chunks)
+            logger.info(f"Translating text to {self.target_language}")
+            resp = self.translate_client.translate_text(
+                Text=text,
+                SourceLanguageCode=self.source_language.split('-')[0],
+                TargetLanguageCode=self.target_language
+            )
+            return resp['TranslatedText']
         except ClientError as e:
-            logger.error(f"Translation error: {e}")
+            logger.error(f"Translate API error: {e}")
             raise
-    
+
     def synthesize_speech(self, text, output_path):
         try:
-            voice_mapping = {
+            voice_map = {
                 'es': 'Lucia',
                 'fr': 'Celine',
                 'de': 'Marlene',
@@ -148,137 +112,104 @@ class AudioProcessor:
                 'ru': 'Tatyana',
                 'nl': 'Lotte',
                 'pl': 'Ewa',
-                'tr': 'Filiz',
+                'tr': 'Filiz'
             }
-            voice_id = voice_mapping.get(self.target_language, 'Joanna')
+            voice_id = voice_map.get(self.target_language, 'Joanna')
             logger.info(f"Synthesizing speech with voice: {voice_id}")
-            
-            max_length = 3000
-            text_chunks = [text] if len(text) <= max_length else []
-            if not text_chunks:
-                sentences = text.replace('. ', '.|').replace('? ', '?|').replace('! ', '!|').split('|')
-                current = ""
-                for sentence in sentences:
-                    if len(current) + len(sentence) < max_length:
-                        current += sentence
-                    else:
-                        text_chunks.append(current)
-                        current = sentence
-                if current:
-                    text_chunks.append(current)
-            
-            audio_chunks = []
-            for chunk in text_chunks:
-                response = self.polly_client.synthesize_speech(
-                    Text=chunk,
-                    OutputFormat='mp3',
-                    VoiceId=voice_id,
-                    Engine='neural'
-                )
-                audio_chunks.append(response['AudioStream'].read())
-            
+
+            resp = self.polly_client.synthesize_speech(
+                Text=text,
+                OutputFormat='mp3',
+                VoiceId=voice_id,
+                Engine='neural'
+            )
+            audio_stream = resp['AudioStream'].read()
             with open(output_path, 'wb') as f:
-                for chunk in audio_chunks:
-                    f.write(chunk)
-            
-            logger.info(f"Synthesized speech saved to {output_path}")
+                f.write(audio_stream)
+            logger.info(f"Speech file written: {output_path}")
             return output_path
         except ClientError as e:
-            logger.error(f"Speech synthesis error: {e}")
+            logger.error(f"Polly API error: {e}")
             raise
-    
-    def process_file(self, input_file):
-        file_path = Path(input_file)
-        filename = file_path.stem
+
+    def process_file(self, mp3_path):
+        file = Path(mp3_path)
+        filename = file.stem
         timestamp = int(time.time())
-        
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Processing: {file_path.name}")
-        logger.info(f"{'='*60}\n")
-        
-        try:
-            # Step 1: Upload original audio
-            audio_s3_key = f"{self.env_prefix}/audio_inputs/{file_path.name}"
-            s3_uri = self.upload_to_s3(str(file_path), audio_s3_key)
-            
-            # Step 2: Transcribe
-            job_name = f"transcribe-{filename}-{timestamp}"
-            transcript = self.transcribe_audio(s3_uri, job_name)
-            
-            transcript_key = f"{self.env_prefix}/transcripts/{filename}.txt"
-            transcript_path = f"/tmp/{filename}_transcript.txt"
-            with open(transcript_path, 'w', encoding='utf-8') as fw:
-                fw.write(transcript)
-            self.upload_to_s3(transcript_path, transcript_key)
-            logger.info(f"Transcript saved to s3://{self.bucket_name}/{transcript_key}")
-            
-            # Step 3: Translate
-            translated_text = self.translate_text(transcript)
-            translation_key = f"{self.env_prefix}/translations/{filename}_{self.target_language}.txt"
-            translation_path = f"/tmp/{filename}_{self.target_language}_translation.txt"
-            with open(translation_path, 'w', encoding='utf-8') as fw:
-                fw.write(translated_text)
-            self.upload_to_s3(translation_path, translation_key)
-            logger.info(f"Translation saved to s3://{self.bucket_name}/{translation_key}")
-            
-            # Step 4: Synthesize speech
-            output_audio_path = f"/tmp/{filename}_{self.target_language}.mp3"
-            self.synthesize_speech(translated_text, output_audio_path)
-            audio_output_key = f"{self.env_prefix}/audio_outputs/{filename}_{self.target_language}.mp3"
-            self.upload_to_s3(output_audio_path, audio_output_key)
-            logger.info(f"Synthesized audio saved to s3://{self.bucket_name}/{audio_output_key}")
-            
-            logger.info(f"\nSuccessfully processed {file_path.name}\n")
-        except Exception as e:
-            logger.error(f"\nError processing {file_path.name}: {e}\n")
-            raise
+        logger.info(f"Processing file: {file.name}")
+
+        # Upload input
+        input_key = f"{self.env_prefix}/audio_inputs/{file.name}"
+        s3_uri = self.upload_to_s3(str(file), input_key)
+
+        # Transcribe
+        job_name = f"job-{filename}-{timestamp}"
+        transcript_text = self.transcribe_audio(s3_uri, job_name)
+
+        # Save transcript locally & upload
+        transcript_local = f"/tmp/{filename}.txt"
+        with open(transcript_local, 'w', encoding='utf-8') as f:
+            f.write(transcript_text)
+        transcript_key = f"{self.env_prefix}/transcripts/{filename}.txt"
+        self.upload_to_s3(transcript_local, transcript_key)
+
+        # Translate
+        translated = self.translate_text(transcript_text)
+        translation_local = f"/tmp/{filename}_{self.target_language}.txt"
+        with open(translation_local, 'w', encoding='utf-8') as f:
+            f.write(translated)
+        translation_key = f"{self.env_prefix}/translations/{filename}_{self.target_language}.txt"
+        self.upload_to_s3(translation_local, translation_key)
+
+        # Synthesize
+        audio_out_local = f"/tmp/{filename}_{self.target_language}.mp3"
+        self.synthesize_speech(translated, audio_out_local)
+        audio_out_key = f"{self.env_prefix}/audio_outputs/{filename}_{self.target_language}.mp3"
+        self.upload_to_s3(audio_out_local, audio_out_key)
+
+        logger.info(f"Finished processing: {file.name}")
 
 def main():
-    bucket_name = os.environ.get('S3_BUCKET_NAME')
-    env_prefix = os.environ.get('ENV_PREFIX')
-    target_language = os.environ.get('TARGET_LANGUAGE', 'es')
-    source_language = os.environ.get('SOURCE_LANGUAGE', 'en-US')
-    input_folder = os.environ.get('INPUT_FOLDER', 'audio_inputs')
-    
-    if not bucket_name or not env_prefix:
-        logger.error("Both S3_BUCKET_NAME and ENV_PREFIX env variables are required")
-        sys.exit(1)
-    
-    processor = AudioProcessor(
-        bucket_name=bucket_name,
-        env_prefix=env_prefix,
-        target_language=target_language,
-        source_language=source_language
-    )
-    
-    input_path = Path(input_folder)
-    if not input_path.exists():
-        logger.error(f"Input folder does not exist: {input_folder}")
-        sys.exit(1)
-    
-    mp3_files = list(input_path.glob('*.mp3'))
-    if not mp3_files:
-        logger.warning(f"No MP3 files found in {input_folder}")
-        sys.exit(0)
-    
-    logger.info(f"Found {len(mp3_files)} MP3 file(s) to process")
-    success = error = 0
-    
-    for mp3 in mp3_files:
-        try:
-            processor.process_file(mp3)
-            success += 1
-        except Exception as e:
-            logger.error(f"Failed to process {mp3.name}: {e}")
-            error += 1
-    
-    logger.info(f"\n{'='*60}")
-    logger.info("Processing Complete")
-    logger.info(f"{'='*60}")
-    logger.info(f"Total files: {len(mp3_files)}, Successful: {success}, Failed: {error}")
-    
-    if error > 0:
+    bucket = os.getenv('S3_BUCKET_NAME')
+    env_prefix = os.getenv('ENV_PREFIX')
+    target_lang = os.getenv('TARGET_LANGUAGE', 'es')
+    source_lang = os.getenv('SOURCE_LANGUAGE', 'en-US')
+    input_folder = os.getenv('INPUT_FOLDER', 'audio_inputs')
+
+    if not bucket or not env_prefix:
+        logger.error("Environment variables S3_BUCKET_NAME and ENV_PREFIX are required.")
         sys.exit(1)
 
-if __name__ == "__main__":
+    proc = AudioProcessor(bucket_name=bucket,
+                          env_prefix=env_prefix,
+                          target_language=target_lang,
+                          source_language=source_lang)
+
+    folder = Path(input_folder)
+    if not folder.exists():
+        logger.error(f"Input folder not found: {input_folder}")
+        sys.exit(1)
+
+    files = list(folder.glob('*.mp3'))
+    if not files:
+        logger.info(f"No .mp3 files found in {input_folder}.")
+        sys.exit(0)
+
+    logger.info(f"Found {len(files)} audio file(s).")
+    success = 0
+    failure = 0
+    for f in files:
+        try:
+            proc.process_file(f)
+            success += 1
+        except Exception as err:
+            logger.error(f"Error processing {f.name}: {err}")
+            failure +=1
+
+    logger.info("========== Summary ==========")
+    logger.info(f"Total files: {len(files)}, Success: {success}, Failure: {failure}")
+    if failure > 0:
+        sys.exit(1)
+
+if __name__ == '__main__':
     main()
