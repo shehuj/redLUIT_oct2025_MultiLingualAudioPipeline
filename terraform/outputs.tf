@@ -10,9 +10,3 @@ output "bucket_region" {
 output "bucket_creation_date" {
   value = aws_s3_bucket.audio_bucket.creation_date
 }
-output "bucket_policy" {
-  value = aws_s3_bucket.audio_bucket.policy
-}
-output "bucket_versioning" {
-  value = aws_s3_bucket.audio_bucket.versioning
-}

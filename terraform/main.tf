@@ -22,7 +22,13 @@ resource "aws_s3_bucket_policy" "policy" {
 
 data "aws_iam_policy_document" "bucket_policy" {
   statement {
-    actions   = ["s3:GetObject", "s3:PutObject"]
+    actions   = ["s3:GetObject", 
+                 "s3:ListBucket",
+                 "s3:DeleteObject",
+                 "s3:PutObjectAcl",
+                 "s3:PutObjectTagging",
+                 "s3:GetObjectTagging",
+                 "s3:PutObject"]
     resources = ["${aws_s3_bucket.audio_bucket.arn}/*"]
 
     principals {
