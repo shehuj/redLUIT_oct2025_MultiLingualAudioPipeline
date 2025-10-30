@@ -43,10 +43,10 @@ jobs:
 
       - name: Terraform Plan
         working-directory: ./terraform
-        run: terraform plan -no-input
+        run: terraform plan -tplan-out=tfplan
       - name: Terraform Apply
         working-directory: ./terraform
-        run: terraform apply -auto-approve -no-input
+        run: terraform apply -auto-approve tfplan
       - name: Verify Deployment
         run: |
           echo "Verifying S3 Bucket Versioning..."
