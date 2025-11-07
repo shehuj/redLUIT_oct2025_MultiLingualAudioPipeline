@@ -11,8 +11,8 @@
           "s3:DeleteObject"
         ],
         "Resource": [
-          "arn:aws:s3:::YOUR-BUCKET-NAME",
-          "arn:aws:s3:::YOUR-BUCKET-NAME/*"
+          "arn:aws:s3:::${{ env.S3_BUCKET }}",
+          "arn:aws:s3:::${{ env.S3_BUCKET }}/*"
         ]
       },
       {
