@@ -4,7 +4,6 @@ on:
   push:
     paths:
       - 'lambda_src/**'
-      - 'audio_inputs/**'
 
 jobs:
   build:
@@ -15,7 +14,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Install dependencies
         working-directory: ./lambda_src
@@ -33,7 +32,7 @@ jobs:
           cd lambda_src/build && zip -r ../deploy.zip .
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: lambda-deploy
           path: lambda_src/deploy.zip
@@ -49,11 +48,12 @@ jobs:
           path: lambda_src/
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${AWS_ACCOUNT_ID}:role/terraform-deploy-role
+          role-session-name: github-actions-lambda
+
       - name: Deploy via Terraform
         working-directory: ./terraform
         run: |
