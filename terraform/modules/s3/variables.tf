@@ -1,12 +1,3 @@
-variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
-variable "backend_bucket" {
-  type = string
-}
-
 variable "bucket_name" {
   type = string
 }
@@ -19,4 +10,9 @@ variable "env" {
 variable "target_lang" {
   type    = string
   default = "es"
+}
+
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
 }
