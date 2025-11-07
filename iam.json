@@ -11,8 +11,8 @@
           "s3:DeleteObject"
         ],
         "Resource": [
-          "arn:aws:s3:::${{ env.S3_BUCKET }}",
-          "arn:aws:s3:::${{ env.S3_BUCKET }}/*"
+          "arn:aws:s3:::${{ secrets.S3_BUCKET }}",
+          "arn:aws:s3:::${{ secrets.S3_BUCKET }}/*"
         ]
       },
       {
@@ -21,8 +21,8 @@
         "Action": [
           "transcribe:StartTranscriptionJob",
           "transcribe:GetTranscriptionJob",
-          "transcribe:DeleteTranscriptionJob",
-          "transcribe:ListTranscriptionJobs"
+          "transcribe:ListTranscriptionJobs",
+          "transcribe:DeleteTranscriptionJob"
         ],
         "Resource": "*"
       },
@@ -40,7 +40,8 @@
         "Effect": "Allow",
         "Action": [
           "polly:SynthesizeSpeech",
-          "polly:DescribeVoices"
+          "polly:DescribeVoices",
+          "polly:ListLexicons"
         ],
         "Resource": "*"
       }
