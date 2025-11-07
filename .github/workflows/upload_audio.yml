@@ -1,0 +1,35 @@
+---
+
+### `.github/workflows/upload_audio.yml`
+#```yaml
+name: Upload Audio Files to S3
+on:
+    workflow_dispatch:
+        inputs:
+          env:
+            description: 'Deployment environment (beta or prod)'
+            required: true
+            default: 'beta'
+    
+jobs:
+      upload:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v3
+    
+          - name: Upload audio files to S3
+            uses: jakejarvis/s3-sync-action@v0.5.1
+            with:
+              args: |
+                --acl bucket-owner-full-control
+                --metadata env=${{ github.event.inputs.env }}
+                --exclude "*" --include "*.mp3"
+                audio_inputs/ s3://${{ secrets.S3_BUCKET }}/audio_inputs/
+            env:
+              AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
+              AWS_REGION: ${{ secrets.AWS_REGION }}
+              AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+              AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    
+          - name: Upload completed
+            run: echo "Uploaded `.mp3` files with env=${{ github.event.inputs.env }}"

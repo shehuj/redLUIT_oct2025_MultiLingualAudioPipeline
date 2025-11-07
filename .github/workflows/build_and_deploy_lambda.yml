@@ -1,0 +1,62 @@
+name: Build & Deploy Lambda
+
+on:
+  push:
+    paths:
+      - 'lambda_src/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./lambda_src
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -t build/
+
+      - name: Copy handler code
+        working-directory: ./lambda_src
+        run: |
+          cp handler.py build/
+
+      - name: Zip deployment package
+        run: |
+          cd lambda_src/build && zip -r ../deploy.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: lambda-deploy
+          path: lambda_src/deploy.zip
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-deploy
+          path: lambda_src/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${AWS_ACCOUNT_ID}:role/terraform-deploy-role
+          role-session-name: github-actions-lambda
+
+      - name: Deploy via Terraform
+        working-directory: ./terraform
+        run: |
+          terraform init
+          terraform apply -auto-approve \
+            -var="lambda_handler_s3_key=lambda_src/deploy.zip"

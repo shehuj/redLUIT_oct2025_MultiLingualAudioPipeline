@@ -1,118 +1,76 @@
-name: Audio Processing - Dev Environment
+name: Process Audio - Pull Request (Beta)
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    branches:
+      - main
     paths:
-      - 'audio_inputs/**/*.mp3'
+      - 'audio_inputs/**'
       - 'process_audio.py'
-      - 'requirements.txt'
-  workflow_dispatch:
-    inputs:
-      target_language:
-        description: 'Target language code (e.g., es, fr, de)'
-        required: false
-        default: 'es'
+      - '.github/workflows/on_pull_request.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  process-audio-dev:
+  process-audio-beta:
     runs-on: ubuntu-latest
     
-    permissions:
-      contents: read
-      id-token: write  # Required for AWS OIDC authentication
-      pull-requests: write  # To comment on PRs
-    
-    environment:
-      name: dev
-      url: https://s3.console.aws.amazon.com/s3/buckets/${{ secrets.DEV_S3_BUCKET_NAME }}
-    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
       
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
       
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Configure AWS credentials for Dev
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.DEV_AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
       
-      # Alternative: Use AWS access keys (less secure)
-      - name: Configure AWS credentials for Dev
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.DEV_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DEV_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-      
-      - name: Process audio files in Dev environment
-        id: process
+      - name: Process audio files (Beta)
         env:
-          S3_BUCKET_NAME: ${{ secrets.DEV_S3_BUCKET_NAME }}
-          TARGET_LANGUAGE: ${{ github.event.inputs.target_language || 'es' }}
-          SOURCE_LANGUAGE: 'en-US'
-          INPUT_FOLDER: 'audio_inputs'
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          TARGET_LANGUAGE: ${{ secrets.TARGET_LANGUAGE }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          ENVIRONMENT: beta
         run: |
-          echo "Processing in DEV environment"
-          echo "Bucket: $S3_BUCKET_NAME"
-          echo "Target Language: $TARGET_LANGUAGE"
-          
-          python process_audio.py 2>&1 | tee processing.log
-          
-          # Extract summary for PR comment
-          echo "PROCESSED_FILES<<EOF" >> $GITHUB_OUTPUT
-          grep "Successfully processed" processing.log || echo "No files processed" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          python scripts/process_audio.py
       
-      - name: Comment on PR with results
-        if: github.event_name == 'pull_request'
+      - name: Comment on PR
         uses: actions/github-script@v7
+        if: always()
         with:
           script: |
             const fs = require('fs');
-            const log = fs.readFileSync('processing.log', 'utf8');
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : '❌';
             
-            // Extract key information
-            const successMatch = log.match(/Successful: (\d+)/);
-            const failedMatch = log.match(/Failed: (\d+)/);
-            const filesMatch = log.match(/Total files: (\d+)/);
+            const comment = `
+            ## ${emoji} Audio Processing - Beta Environment
             
-            const successful = successMatch ? successMatch[1] : '0';
-            const failed = failedMatch ? failedMatch[1] : '0';
-            const total = filesMatch ? filesMatch[1] : '0';
+            **Status**: ${status.toUpperCase()}
+            **Environment**: \`beta\`
+            **Target Language**: \`${{ secrets.TARGET_LANGUAGE }}\`
+            **S3 Bucket**: \`${{ secrets.S3_BUCKET }}\`
             
-            const comment = `## Audio Processing Results (Dev Environment)
+            ### Processed Files
+            All outputs have been uploaded to the \`beta/\` prefix in S3:
+            - 📝 Transcripts: \`s3://${{ secrets.S3_BUCKET }}/beta/transcripts/\`
+            - 🌍 Translations: \`s3://${{ secrets.S3_BUCKET }}/beta/translations/\`
+            - 🔊 Audio Outputs: \`s3://${{ secrets.S3_BUCKET }}/beta/audio_outputs/\`
             
-            **Summary:**
-            - Total files: ${total}
-            - Successful: ${successful}
-            - Failed: ${failed}
-            
-            **Environment:** Development
-            **S3 Bucket:** \`${{ secrets.DEV_S3_BUCKET_NAME }}\`
-            **Target Language:** ${{ github.event.inputs.target_language || 'es' }}
-            
-            <details>
-            <summary>View Processing Log</summary>
-            
-            \`\`\`
-            ${log.slice(-2000)}
-            \`\`\`
-            
-            </details>
-            
-            > This is a test run in the development environment. Merge this PR to process in production.
+            ${status === 'success' ? '✨ Ready for review! Merge this PR to deploy to production.' : '⚠️ Processing failed. Please check the workflow logs for details.'}
             `;
             
             github.rest.issues.createComment({
@@ -121,21 +79,3 @@ jobs:
               repo: context.repo.repo,
               body: comment
             });
-      
-      - name: Upload processing logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dev-processing-logs-${{ github.run_number }}
-          path: |
-            processing.log
-            *.log
-          retention-days: 30
-      
-      - name: Check for failures
-        run: |
-          if grep -q "Failed: [1-9]" processing.log; then
-            echo "Some files failed to process"
-            exit 1
-          fi
-          echo "All files processed successfully"

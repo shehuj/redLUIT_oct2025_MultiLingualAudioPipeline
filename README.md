@@ -1,770 +1,179 @@
-# Audio Processing Pipeline - Dev/Prod Deployment
-
-Automated audio transcription, translation, and synthesis using AWS services with separate development and production environments.
-
-## Architecture Overview
-
-```
-Pull Request → Dev Environment (Test)
-      ↓
-   Merge to Main → Production Environment (Live)
-```
-
-### Workflow Structure
-
-1. **`on_pull_request.yml`** - Development Environment
-   - Triggers on pull requests
-   - Deploys to dev S3 bucket
-   - Posts results as PR comments
-   - Safe testing environment
-
-2. **`on_merge.yml`** - Production Environment
-   - Triggers on merge to main/master
-   - Deploys to production S3 bucket
-   - Creates issues on failure
-   - Optional Slack notifications
-   - Production safety checks
-
-## Features
-
-- Upload MP3 files to Amazon S3
-- Transcribe audio using Amazon Transcribe
-- Translate text to multiple languages using Amazon Translate
-- Synthesize translated speech using Amazon Polly
-- Separate dev and production environments
-- Automated PR comments with results
-- Failure notifications and issue creation
-- Organized S3 output structure
-
-## Output Structure
-
-### Development Environment
-```
-s3://your-dev-bucket/
-├── audio_inputs/
-├── transcripts/
-├── translations/
-└── audio_outputs/
-```
-
-### Production Environment
-```
-s3://your-prod-bucket/
-├── audio_inputs/
-├── transcripts/
-├── translations/
-└── audio_outputs/
-```
-
-## Setup Instructions
-
-### 1. AWS Setup
-
-#### Create Two S3 Buckets
-
-```bash
-# Development bucket
-aws s3 mb s3://your-company-audio-dev
-
-# Production bucket
-aws s3 mb s3://your-company-audio-prod
-```
-
-#### Create IAM Roles/Users
-
-Create two separate IAM roles or users:
-- One for development environment
-- One for production environment
-
-Both need the same permissions (see `iam-policy-example.json`), but scoped to their respective buckets.
-
-**Development IAM Policy:**
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["s3:*"],
-      "Resource": [
-        "arn:aws:s3:::your-company-audio-dev",
-        "arn:aws:s3:::your-company-audio-dev/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "transcribe:*",
-        "translate:*",
-        "polly:*"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-**Production IAM Policy:**
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["s3:*"],
-      "Resource": [
-        "arn:aws:s3:::your-company-audio-prod",
-        "arn:aws:s3:::your-company-audio-prod/*"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "transcribe:*",
-        "translate:*",
-        "polly:*"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
-
-### 2. GitHub Repository Setup
-
-#### Create Repository Secrets
-
-Go to **Settings → Secrets and variables → Actions** and create:
-
-**Common Secrets:**
-- `AWS_REGION` - Your AWS region (e.g., `us-east-1`)
-
-**Development Environment (Option A - OIDC - Recommended):**
-- `DEV_AWS_ROLE_ARN` - IAM role ARN for dev environment
-- `DEV_S3_BUCKET_NAME` - Development S3 bucket name
-
-**Development Environment (Option B - Access Keys):**
-- `DEV_AWS_ACCESS_KEY_ID` - Development AWS access key
-- `DEV_AWS_SECRET_ACCESS_KEY` - Development AWS secret key
-- `DEV_S3_BUCKET_NAME` - Development S3 bucket name
-
-**Production Environment (Option A - OIDC - Recommended):**
-- `PROD_AWS_ROLE_ARN` - IAM role ARN for production
-- `PROD_S3_BUCKET_NAME` - Production S3 bucket name
-
-**Production Environment (Option B - Access Keys):**
-- `PROD_AWS_ACCESS_KEY_ID` - Production AWS access key
-- `PROD_AWS_SECRET_ACCESS_KEY` - Production AWS secret key
-- `PROD_S3_BUCKET_NAME` - Production S3 bucket name
-
-**Optional:**
-- `SLACK_WEBHOOK_URL` - Slack webhook for production notifications
-
-#### Create GitHub Environments
-
-1. Go to **Settings → Environments**
-2. Create two environments:
-   - **development** - No special protection rules
-   - **production** - Add protection rules:
-     - Required reviewers (optional but recommended)
-     - Wait timer (optional)
-     - Restrict to main/master branch
-
-#### Copy Workflow Files
-
-```bash
-mkdir -p .github/workflows
-cp on_pull_request.yml .github/workflows/
-cp on_merge.yml .github/workflows/
-```
-
-### 3. Repository Structure
-
-```
-your-repo/
-├── .github/
-│   └── workflows/
-│       ├── on_pull_request.yml
-│       └── on_merge.yml
-├── audio_inputs/
-│   └── (add your .mp3 files here)
-├── process_audio.py
-├── requirements.txt
-└── README.md
-```
-
-## Workflow Guide
-
-### Development Workflow (Testing)
-
-1. **Create a new branch:**
-   ```bash
-   git checkout -b feature/add-new-audio
-   ```
-
-2. **Add MP3 files:**
-   ```bash
-   cp my-audio.mp3 audio_inputs/
-   git add audio_inputs/my-audio.mp3
-   ```
-
-3. **Push and create PR:**
-   ```bash
-   git commit -m "Add new audio file"
-   git push origin feature/add-new-audio
-   # Create PR on GitHub
-   ```
-
-4. **Review results:**
-   - Workflow runs automatically on PR creation
-   - Check the PR comment for processing results
-   - Files are processed in **dev environment**
-   - No impact on production
-
-5. **Iterate if needed:**
-   ```bash
-   # Make changes
-   git add .
-   git commit -m "Fix audio file"
-   git push
-   # Workflow runs again automatically
-   ```
-
-### Production Workflow (Live Deployment)
-
-1. **Merge the PR:**
-   - Review the dev processing results
-   - Approve and merge the PR to main/master
-
-2. **Automatic production deployment:**
-   - Workflow triggers on merge
-   - Processes files in **production environment**
-   - Creates issue if processing fails
-   - Sends Slack notification (if configured)
-
-3. **Verify production:**
-   - Check the workflow run logs
-   - Verify files in production S3 bucket
-
-### Manual Production Deployment
-
-You can also trigger production manually:
-
-1. Go to **Actions → Audio Processing - Production**
-2. Click **Run workflow**
-3. Type `PRODUCTION` to confirm
-4. Select target language (optional)
-5. Click **Run workflow**
-
-> **Safety Feature:** Manual production runs require typing "PRODUCTION" to prevent accidental deployments.
-
-## Monitoring & Notifications
-
-### PR Comments (Development)
-
-When a PR is created or updated, the workflow posts a comment with:
-- Processing summary (success/failure counts)
-- Environment details
-- Processing logs
-- S3 bucket information
-
-Example:
-```
-🎵 Audio Processing Results (Dev Environment)
-
-Summary:
-- Total files: 3
-- Successful: 3
-- Failed: 0
-
-Environment: Development
-S3 Bucket: your-company-audio-dev
-Target Language: es
-```
-
-### Issue Creation (Production)
-
-When production processing fails:
-- Automatic GitHub issue is created
-- Tagged with `bug`, `production`, `audio-processing`
-- Contains error logs and action items
-- Links to workflow run and S3 console
-
-### Slack Notifications (Production)
-
-Configure Slack webhook to receive:
-- Success/failure status
-- File processing counts
-- Direct link to workflow run
-- Triggered by actor information
-
-## Testing Strategy
-
-### Local Testing
-
-Before creating a PR, test locally:
-
-```bash
-# Set environment variables
-export S3_BUCKET_NAME="your-company-audio-dev"
-export TARGET_LANGUAGE="es"
-export AWS_ACCESS_KEY_ID="your-dev-key"
-export AWS_SECRET_ACCESS_KEY="your-dev-secret"
-export AWS_DEFAULT_REGION="us-east-1"
-
-# Run the script
-python process_audio.py
-```
-
-### Dev Environment Testing
-
-1. Create PR with test audio files
-2. Review automated processing results
-3. Verify outputs in dev S3 bucket
-4. Make adjustments if needed
-
-### Production Deployment
-
-1. Ensure dev testing is successful
-2. Merge PR to trigger production deployment
-3. Monitor workflow execution
-4. Verify production S3 outputs
-
-## Configuration
-
-### Environment Variables
-
-Both workflows support:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `S3_BUCKET_NAME` | S3 bucket (dev or prod) | - |
-| `TARGET_LANGUAGE` | Translation target | `es` |
-| `SOURCE_LANGUAGE` | Transcription source | `en-US` |
-| `INPUT_FOLDER` | Input directory | `audio_inputs` |
-
-### Supported Languages
-
-**Translation targets:** `es`, `fr`, `de`, `it`, `pt`, `ja`, `ko`, `zh`, `ar`, `hi`, `ru`, `nl`, `pl`, `tr` and more
-
-**Transcription sources:** `en-US`, `en-GB`, `es-ES`, `fr-FR`, `de-DE` and more
-
-See AWS documentation for complete lists.
-
-## Security Best Practices
-
-1. **Use OIDC authentication** instead of access keys when possible
-2. **Separate IAM roles** for dev and production
-3. **Limit S3 bucket access** to specific roles only
-4. **Enable GitHub environment protection** for production
-5. **Require PR reviews** before merging to main
-6. **Use branch protection rules** on main/master
-7. **Rotate access keys regularly** if using key-based auth
-8. **Monitor CloudWatch logs** for unusual activity
-
-## Cost Optimization
-
-### Development Environment
-- Process only on PR changes to audio files
-- Use smaller/shorter audio samples for testing
-- Regularly clean up old dev S3 objects
-
-### Production Environment
-- Only runs on merge (controlled deployments)
-- Batch process multiple files efficiently
-- Set S3 lifecycle policies to archive old files
-
-### Estimated Costs
-- **Dev:** ~$0.50-1.00 per PR (depends on file count/length)
-- **Prod:** ~$2-5 per deployment (1 hour of audio translated)
-
-## Troubleshooting
-
-### Dev Workflow Not Triggering
-
-**Issue:** PR created but workflow doesn't run
-
-**Solutions:**
-- Ensure `.mp3` files are in `audio_inputs/` folder
-- Check workflow file is in `.github/workflows/`
-- Verify PR isn't from a fork (workflows limited on forks)
-- Check Actions are enabled in repository settings
-
-### Production Workflow Not Running
-
-**Issue:** PR merged but production workflow doesn't trigger
-
-**Solutions:**
-- Verify merge was to `main` or `master` branch
-- Check workflow paths match changed files
-- Review Actions logs for errors
-- Ensure GitHub environments are configured
-
-### AWS Authentication Failures
-
-**Issue:** Workflow fails with AWS credential errors
-
-**Solutions:**
-- Verify all secrets are set correctly
-- Check IAM role/user permissions
-- Ensure correct AWS region is configured
-- Test credentials with AWS CLI locally
-- For OIDC, verify trust relationship is configured
-
-### Processing Failures
-
-**Issue:** Files fail to process
-
-**Solutions:**
-- Check MP3 file is valid format
-- Verify source language matches audio
-- Review CloudWatch logs in AWS console
-- Check S3 bucket permissions
-- Ensure no rate limiting on AWS services
-
-### PR Comments Not Appearing
-
-**Issue:** Dev workflow runs but no PR comment
-
-**Solutions:**
-- Verify `pull-requests: write` permission is set
-- Check workflow completed successfully
-- Review Actions logs for errors
-- Ensure not running on fork PR
-
-## Additional Resources
-
-- [AWS Transcribe Documentation](https://docs.aws.amazon.com/transcribe/)
-- [AWS Translate Documentation](https://docs.aws.amazon.com/translate/)
-- [AWS Polly Documentation](https://docs.aws.amazon.com/polly/)
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [GitHub Environments Documentation](https://docs.github.com/en/actions/deployment/targeting-different-environments)
-
-## Contributing
-
-1. Create a feature branch
-2. Add/modify audio files or code
-3. Create PR and review dev results
-4. Address any review comments
-5. Merge to deploy to production
-
-## License
-
-MIT License - Feel free to use and modify.
+# redLUIT_MultiLinualAudioPipeline_Oct2025_
+Miles Stone Project 02
+
+# claudIQ Audio Processing Pipeline  
+> Event-driven AWS pipeline: Upload MP3 → Transcribe → Translate → Polly → Output to S3 (prefixed by environment)
+
+## Table of Contents  
+1. [Overview](#overview)  
+2. [Motivation](#motivation)  
+3. [Architecture](#architecture)  
+4. [Features](#features)  
+5. [Getting Started](#gettingstarted)  
+   - [Prerequisites](#prerequisites)  
+   - [Deploying Infrastructure (Terraform)](#deploying-infrastructure-terraform)  
+   - [Building & Deploying Lambda](#building-and-deploying-lambda)  
+   - [Uploading Audio Files (GitHub Actions)](#uploading-audio-files-github-actions)  
+6. [Usage](#usage)  
+   - [Workflow Summary](#workflow-summary)  
+   - [Environment Separation (beta/prod)](#environment-separation-betaprod)  
+   - [S3 Prefixes & Outputs](#s3-prefixes-outputs)  
+7. [Configuration](#configuration)  
+   - [Terraform Variables](#terraform-variables)  
+   - [Lambda Environment Variables](#lambda-environment-variables)  
+8. [Monitoring & Logging](#monitoring-and-logging)  
+9. [Security & Cost Governance](#security-and-cost-governance)  
+10. [Troubleshooting](#troubleshooting)  
+11. [Contributing](#contributing)  
+12. [License & Acknowledgements](#license-and-acknowledgements)  
 
 ---
 
-**Questions?** Check the troubleshooting section or create an issue in the repository.
+## 1. Overview  
+This repository contains a production-ready event-driven audio processing pipeline built on AWS for the claudIQ brand. The pipeline is triggered by an upload of a `.mp3` file into an S3 bucket (under `audio_inputs/`). A Lambda function responds to the event, performs: transcription via Amazon Transcribe → translation via Amazon Translate → text-to-speech via Amazon Polly. Final outputs (transcript text, translation text, audio outputs) are stored in structured S3 prefixes under an environment namespace (e.g., `beta/` or `prod/`). The build and upload of MP3 files is handled by a lightweight GitHub Actions workflow (no processing logic there).
 
+---
 
-#### TERRAFORM
+## 2. Motivation  
+- **Scalability & decoupling**: By moving processing logic out of GitHub Actions into a Lambda/S3 event-trigger architecture, we free CI/CD from heavy compute and allow multiple files to be processed asynchronously.  
+- **Environment separation**: Enable distinct “beta” vs “prod” pathways (prefixes, metadata) so that testing and production runs stay isolated.  
+- **Automated media workflows**: For audio uploads in e.g. aviation/consulting contexts, this pipeline automates transcription, translation and voice synthesis — saving manual effort and enabling reuse across languages.  
+- **Ops-ready**: Incorporates monitoring, tagging, encryption, and Infrastructure-as-Code for repeatability and governance.
 
-# Complete Audio Processing Infrastructure Example
+---
 
-This example demonstrates a full production-ready setup with both development and production environments.
+## 3. Architecture  
+Here’s a high-level diagram of how the pipeline works:
 
-## What This Creates
+1. User or workflow uploads `*.mp3` file to S3 bucket under `audio_inputs/` prefix, with metadata `env={beta|prod}` (or filename convention).  
+2. S3 generates a **ObjectCreated:Put** event (filtered to `.mp3` under `audio_inputs/`) configured to trigger a Lambda function.  
+3. Lambda handler:  
+   - Reads bucket/key from event.  
+   - Determines `env` (metadata or parsing filename).  
+   - Starts Amazon Transcribe job for the MP3.  
+   - Option A: Polls for job completion (simple) **or** Option B: uses EventBridge + secondary Lambda for long jobs.  
+   - Downloads transcript text, stores clean text to `env/transcripts/{filename}.txt`.  
+   - For each target language configured: calls Amazon Translate → stores `env/translations/{filename}_{lang}.txt`; calls Amazon Polly → synthesises audio → stores `env/audio_outputs/{filename}_{lang}.mp3`.  
+4. Outputs live in the S3 bucket, partitioned by environment.  
+5. Monitoring/alerts/metrics: CloudWatch logs, metrics on job durations/failures, resource tags for cost allocation.
 
-- ✅ **GitHub OIDC Provider** - For secure authentication
-- ✅ **Dev S3 Bucket** - With shorter retention (90 days)
-- ✅ **Prod S3 Bucket** - With longer retention (2 years)
-- ✅ **Dev IAM Role** - For GitHub Actions (all branches)
-- ✅ **Prod IAM Role** - For GitHub Actions (main branch only)
-- ✅ **Lifecycle Rules** - Automatic cost optimization
-- ✅ **CloudWatch Logging** - Audit trails
-- ✅ **SNS Notifications** - (Optional)
+---
 
-## Quick Start
+## 4. Features  
+- **Automated and event-driven**: No manual polling or human steps once upload happens.  
+- **Environment aware**: Supports `beta` vs `prod` contexts via metadata or naming convention.  
+- **Multi-language support**: Translate into multiple target languages, synthesise voice per language.  
+- **Infrastructure as Code**: Terraform modules deploy bucket, Lambda, IAM, event notifications.  
+- **CI/CD friendly**: GitHub Actions for building/deploying Lambda and for uploading audio input.  
+- **Built with security & ops in mind**: Encryption at rest, least-privilege IAM, tagging for cost/governance.
 
-### 1. Configure Variables
+---
 
+## 5. Getting Started  
+### Prerequisites  
+- AWS account with permissions to create S3, Lambda, IAM, Transcribe, Translate, Polly.  
+- Terraform v1.x installed.  
+- AWS CLI configured or GitHub Actions configured with AWS credentials.  
+- GitHub repository with required secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc).  
+- MP3 audio file ready to upload under `audio_inputs/`.
+
+### Deploying Infrastructure (Terraform)  
 ```bash
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-```
-
-### 2. First Run (Create OIDC Provider)
-
-```hcl
-# In terraform.tfvars
-create_oidc_provider         = true
-check_existing_oidc_provider = false
-```
-
-```bash
+cd terraform/
 terraform init
-terraform plan
-terraform apply
-```
-
-### 3. Save OIDC Provider ARN
-
-After first apply, note the OIDC provider ARN from outputs.
+terraform plan \
+  -var="env=beta" \
+  -var="bucket_name=claudIQ-audio-beta-bucket" \
+  -var="lambda_handler_s3_key=lambda_src/deploy.zip" \
+  -var="target_languages=[\"es\",\"fr\"]" \
+  -var='voice_mapping={ "es" = "Lucia", "fr" = "Celine" }'
+terraform apply -auto-approve
 
-### 4. Subsequent Runs
-
-```hcl
-# In terraform.tfvars
-create_oidc_provider         = false
-check_existing_oidc_provider = true
-```
+Repeat or modify for env=prod with production bucket and languages.
 
-```bash
-terraform apply
-```
+Building & Deploying Lambda
+`./scripts/package_lambda.sh
+# This packages lambda_src into deploy.zip`
 
-### 5. Configure GitHub
+Push code to GitHub and the .github/workflows/build_and_deploy_lambda.yml workflow will take care of artifact and Terraform apply.
 
-Use the outputs to configure GitHub secrets:
+## Uploading Audio Files (GitHub Actions:
 
-```bash
-terraform output github_secrets_summary
-```
+Trigger the upload_audio.yml workflow via GitHub Actions (manually or on a branch). You’ll supply env input (beta or prod). It uploads .mp3 files from audio_inputs/ folder to the S3 bucket under audio_inputs/, tagging with metadata env={beta|prod}.
 
-## Architecture
+6. Usage
 
-```
-┌─────────────────────────────────────────────┐
-│         GitHub OIDC Provider                │
-│   (Once per AWS Account)                    │
-└──────────────┬──────────────────────────────┘
-               │
-        ┌──────┴──────┐
-        │             │
-        ▼             ▼
-┌─────────────┐ ┌─────────────┐
-│ Dev Role    │ │ Prod Role   │
-│ (All        │ │ (Main only) │
-│  branches)  │ │             │
-└──────┬──────┘ └──────┬──────┘
-       │               │
-       ▼               ▼
-┌─────────────┐ ┌─────────────┐
-│ Dev Bucket  │ │ Prod Bucket │
-│ - 30d → IA  │ │ - 90d → IA  │
-│ - 90d del   │ │ - 730d del  │
-└─────────────┘ └─────────────┘
-```
+Workflow Summary
+	1.	Place yourfile.mp3 into audio_inputs/ folder in your repo.
+	2.	Run Upload Audio File workflow, select env=beta (for example).
+	3.	S3 receives object → triggers Lambda → pipeline executes.
+	4.	After completion, head to S3 bucket:
+	•	beta/transcripts/yourfile.txt
+	•	beta/translations/yourfile_es.txt, beta/translations/yourfile_fr.txt
+	•	beta/audio_outputs/yourfile_es.mp3, beta/audio_outputs/yourfile_fr.mp3
 
-## Configuration Options
+Environment Separation (beta/prod)
+	•	Filenames or S3 object metadata determine env (fallback default is prod).
+	•	Use separate buckets or shared bucket with prefix beta/ vs prod/ to isolate test vs production data.
+	•	Tag all AWS resources with Environment=beta/prod to enable cost tracking.
 
-### Basic Configuration (Required)
+S3 Prefixes & Outputs
+	•	Input prefix: audio_inputs/{filename}.mp3
+	•	Transcript: {env}/transcripts/{filename}.txt
+	•	Translations: {env}/translations/{filename}_{lang}.txt
+	•	Audio outputs: {env}/audio_outputs/{filename}_{lang}.mp3
 
-```hcl
-aws_region       = "us-east-1"
-dev_bucket_name  = "acme-audio-dev"
-prod_bucket_name = "acme-audio-prod"
-github_org       = "acme-corp"
-github_repo      = "audio-pipeline"
-```
+7. Configuration
 
-### Production Restrictions
+Terraform Variables
 
-```hcl
-# Only allow main branch and tags to deploy to production
-restrict_prod_to_main = true
-```
+Defined in variables.tf, key ones include:
+	•	env: “beta” or “prod”
+	•	bucket_name: S3 bucket
+	•	lambda_handler_s3_key: path to Lambda zip
+	•	target_languages: list of language codes (e.g., ["es","fr"])
+	•	voice_mapping: map language code → Polly voice ID
 
-### Cost Optimization
-
-```hcl
-# Enable intelligent tiering for automatic optimization
-enable_intelligent_tiering = true
-```
-
-### Advanced Features
+Lambda Environment Variables
 
-```hcl
-# Enable custom vocabularies for better transcription
-enable_custom_vocabularies = true
+Configured in lambda.tf under environment block:
+	•	OUTPUT_BUCKET: S3 bucket for results
+	•	TARGET_LANGUAGES: comma-separated list of target languages (e.g., es,fr)
+	•	VOICE_MAPPING_JSON: JSON string mapping language codes to voice IDs
+	•	ENV_PREFIX: default environment (e.g., prod) used if metadata not present
 
-# Enable custom terminologies for domain-specific translation
-enable_custom_terminologies = true
+You may optionally add: LOG_LEVEL, TRANSCRIBE_LANGUAGE_CODE, etc.
 
-# Enable custom lexicons for pronunciation control
-enable_custom_lexicons = true
-```
+8. Monitoring & Logging
+	•	Lambda logs appear in CloudWatch under the function’s log group.
+	•	Monitor metrics: invocation count, errors, duration, throttles.
+	•	Create CloudWatch alarms for: high error rate, long execution times, increased cost alerts.
+	•	Tag resources (Project=claudIQ, Environment=beta/prod) for cost allocation and governance.
+	•	If job duration grows, consider migrating to asynchronous mode (use EventBridge rule for Transcribe job completion) or the AWS Step Functions orchestration pattern.
 
-### Monitoring
+9. Security & Cost Governance
+	•	S3 bucket: versioning enabled; server-side encryption (SSE-S3 or SSE-KMS).
+	•	Block public access on the bucket (aws_s3_bucket_public_access_block).
+	•	IAM role for Lambda follows least-privilege: only required actions for S3, Transcribe, Translate, Polly.
+	•	Tagging is mandatory for cost tracking and accountability (Environment, Project).
+	•	Set lifecycle rules for output prefixes to transition to Glacier or delete after retention period (especially for test data in beta).
+	•	Monitor usage of Transcribe/Translate/Polly (costly services) and set budget alerts.
 
-```hcl
-# Enable access logging
-enable_access_logging = true
 
-# Enable SNS notifications
-enable_sns_notifications = true
-notification_email = "team@example.com"
-```
+10. Troubleshooting
 
-## Outputs
 
-The example provides helpful outputs for configuration:
+11. Contributing
 
-```bash
-# View all outputs
-terraform output
+We welcome contributions to this project! Please follow these guidelines:
+	•	Fork the repository and create a feature branch (e.g., feature-async-orchestration).
+	•	Ensure all commits follow conventional commit style (e.g., feat: add eventbridge for transcribe).
+	•	Write unit tests for Lambda logic (e.g., in lambda_src/tests/).
+	•	Update documentation and README if you add or change a feature.
+	•	Submit a Pull Request and we will review.
+	•	For major changes, open an issue to discuss the architecture before coding.
 
-# View GitHub secrets configuration
-terraform output github_secrets_summary
+################################################################################################################
+“My README is the first handshake my project gives the world.”
 
-# View setup instructions
-terraform output setup_instructions
-```
-
-## Cost Estimates
-
-### Monthly Infrastructure Costs
-
-**Development:**
-- S3 Storage (100GB): ~$2.30
-- Lifecycle transitions: Reduces to ~$0.40 after 90 days
-- IAM roles/policies: Free
-- **Total: ~$0.40-2.30/month**
-
-**Production:**
-- S3 Storage (500GB): ~$11.50
-- Lifecycle transitions: Reduces to ~$2.00 after 90 days
-- IAM roles/policies: Free
-- **Total: ~$2.00-11.50/month**
-
-### Processing Costs (Per File)
-
-- Transcribe (10 min): $0.24
-- Translate (1000 chars): $0.015
-- Polly (1000 chars): $0.004
-- **Total per 10-min file: ~$0.26**
-
-## Security Features
-
-### Development
-- ✅ All branches can deploy
-- ✅ Shorter data retention
-- ✅ Force destroy enabled for cleanup
-
-### Production
-- ✅ Only main branch + tags can deploy
-- ✅ Longer data retention for compliance
-- ✅ Force destroy disabled for protection
-- ✅ Required reviewers (configured in GitHub)
-
-## Lifecycle Management
-
-### Development Environment
-```
-audio_inputs/
-  30 days  → Standard-IA
-  90 days  → DELETE
-
-transcripts/ & translations/
-  60 days  → DELETE
-
-audio_outputs/
-  90 days  → DELETE
-```
-
-### Production Environment
-```
-audio_inputs/
-  90 days  → Standard-IA
-  180 days → Glacier
-  730 days → DELETE (2 years)
-
-transcripts/ & translations/
-  365 days → DELETE (1 year)
-
-audio_outputs/
-  730 days → DELETE (2 years)
-```
-
-## Common Workflows
-
-### Deploy Infrastructure
-
-```bash
-terraform init
-terraform plan
-terraform apply
-```
-
-### Update Production Retention
-
-```hcl
-# In terraform.tfvars
-# Change retention periods
-```
-
-```bash
-terraform plan
-terraform apply
-```
-
-### Add Custom Vocabularies
-
-```hcl
-# In terraform.tfvars
-enable_custom_vocabularies = true
-```
-
-```bash
-terraform apply
-```
-
-## Troubleshooting
-
-### OIDC Provider Already Exists
-
-```
-Error: EntityAlreadyExists
-```
-
-**Fix:**
-```hcl
-create_oidc_provider = false
-check_existing_oidc_provider = true
-```
-
-### Bucket Name Taken
-
-```
-Error: BucketAlreadyExists
-```
-
-**Fix:** Choose different bucket names (must be globally unique)
-
-### Role Not Assuming
-
-**Check:**
-1. OIDC provider ARN is correct
-2. GitHub repository pattern matches
-3. Branch restrictions are appropriate
-
-## Next Steps
-
-After infrastructure is deployed:
-
-1. ✅ Configure GitHub secrets
-2. ✅ Create GitHub environments
-3. ✅ Copy workflow files
-4. ✅ Test with sample audio
-5. ✅ Monitor costs in AWS Cost Explorer
-
-## Cleanup
-
-To destroy all resources:
-
-```bash
-# Warning: This will delete all buckets and data
-terraform destroy
-```
-
-## Support
-
-For issues or questions:
-- Check module READMEs in `../../modules/`
-- Review outputs: `terraform output`
-- Check AWS CloudTrail logs
-- Review GitHub Actions logs
-
-## License
-
-MIT
+So I make sure it is informative, clear and helps others onboard quickly.
