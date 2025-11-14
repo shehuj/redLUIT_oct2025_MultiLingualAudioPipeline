@@ -1,6 +1,3 @@
-# redLUIT_MultiLinualAudioPipeline_Oct2025_
-Miles Stone Project 02
-
 # claudIQ Audio Processing Pipeline  
 > Event-driven AWS pipeline: Upload MP3 → Transcribe → Translate → Polly → Output to S3 (prefixed by environment)
 
